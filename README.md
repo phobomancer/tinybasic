@@ -48,9 +48,9 @@ No loop constructs other that `GOTO`
 Only 26 possible variables (A-Z) (and they're all integers)
 Only 4 arithmatic operators (+,-,*,/)
 
-At the time of this writing only 7 keywords have been implemented:
-`PRINT`, `LET`, `GOTO`, `LIST`, `IF`, `THEN` and `RUN`
-
+At the time of this writing 9 keywords have been implemented:
+`PRINT`, `LET`, `GOTO`, `LIST`, `IF`, `THEN`, `GOSUB`, `RETURN`, and `RUN`
+For the time being I am choosing to ignore `CLEAR` and `INPUT`
 ## Why
 There are really two "Why"s here, why am I writing this, and why 
 am I writing this so poorly.

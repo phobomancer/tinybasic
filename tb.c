@@ -1,14 +1,18 @@
 #include<stdio.h>
 #define programlen 40000
 #define linelength 256
-
-int KeywordCount = 10;
+int KeywordCount = 11;
 enum KeywordValues{PRINT = '?', IF='!', THEN='=' ,GOTO='%', INPUT='&', LET='@', GOSUB='\\', RETURN='~', LIST='`', RUN='_', END='#'};
 int KeywordLookup[] = {PRINT, IF,THEN,GOTO,INPUT,LET,GOSUB,RETURN,LIST,RUN,END};
 char *Keywords[] = {"PRINT", "IF","THEN","GOTO","INPUT","LET","GOSUB","RETURN","LIST","RUN","END"};
 int KeywordLengths[] = {5,2,4,4,5,3,5,6,4,3,3};
 char programspace[programlen];
 int variables[26];
+
+#define gosubStackLen 32
+unsigned short gosubStack[gosubStackLen]; //32 seems like plently to me
+
+int gosubStackIndex = -1;
 unsigned short programstart = 0xffff;
 unsigned short nextline= 0xffff;
 unsigned short programstartlinenum = 0xffff;
@@ -21,6 +25,7 @@ int doStatement(char *line);
 int expression(char *line); 
 
 int isKeyword(const char *a, int key) {
+//	printf("testing %s\n",Keywords[key]);
 	for(int i = 0; i < KeywordLengths[key]; i++){
 		if(a[i]!=Keywords[key][i]) {
 			return 0;
@@ -212,6 +217,7 @@ void doRun() {
 	//printf("nextline %hu\n",nextline);
 	char *line;
 	while(nextline != 0xffff) {
+		if(error) { return; }
 		line = GetLine(nextline);
 		if(line == NULL) return;
 		//printf("getting nextlink\n");
@@ -233,6 +239,26 @@ void doRun() {
 void doGoto(char *line) {
 	int linenum = expression(line+1);
 	nextline =(unsigned short)linenum;
+}
+
+void doGosub(char *line) {
+	gosubStackIndex++;
+	if( gosubStackIndex >= gosubStackLen ){
+		error = 1;
+		return;
+	}
+	gosubStack[gosubStackIndex] = nextline;
+	int linenum = expression(line+1);
+	nextline =(unsigned short)linenum;
+}
+
+void doReturn() {
+	if(gosubStackIndex < 0){
+		error = 1;
+		return;
+	}
+	nextline = gosubStack[gosubStackIndex];
+	gosubStackIndex--;
 }
 
 void doLet(char *line) {
@@ -304,6 +330,7 @@ void doIfThen(char *line) {
 }
 	
 	
+//int KeywordLookup[] = {PRINT, IF,THEN,GOTO,INPUT,LET,GOSUB,RETURN,LIST,RUN,END};
 int doStatement(char *line) {
 	switch(line[lineIndex]) {
 		case 0:
@@ -326,6 +353,15 @@ int doStatement(char *line) {
 			break;
 		case IF:
 			doIfThen(line);
+			break;
+		case END:
+			nextline = 0xffff;
+			break;
+		case GOSUB:
+			doGosub(line);
+			break;
+		case RETURN:
+			doReturn();
 			break;
 	}
 	return 0;

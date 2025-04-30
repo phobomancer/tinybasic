@@ -251,6 +251,57 @@ void doLet(char *line) {
 	int value = expression(line);
 	variables[var - 'A'] = value;
 }
+
+
+int getRelOp(char *line) {
+	int op = 0;
+
+	int partial=line[lineIndex];
+	if( partial == '<') {
+		op = 4;
+	} else if ( partial ==  '>') {
+		op = 2;
+	} else if ( partial == '=') {
+		op = 1;
+	}
+	return op;
+}
+void doIfThen(char *line) {
+	lineIndex++;
+	int value1, value2, op, tmp, istrue = 0;
+	value1 = expression(line);
+	op = getRelOp(line);
+	if(op == 0) {
+		error = 1;
+		return;
+	}
+	lineIndex++;
+	tmp = getRelOp(line);
+	if(tmp) {
+		lineIndex++;
+	}
+	op|=tmp;
+	value2 = expression(line);
+
+	if(line[lineIndex] != THEN) {
+		error = 1;
+		return;
+	} else {
+		lineIndex++;
+	}
+
+	if(value1 == value2 && (op&1)){
+		istrue=1;
+	} else if (value1 > value2 && (op&2)){
+		istrue=1;
+	} else if (value1 < value2 && (op&4)){
+		istrue=1;
+	}
+	
+	if(istrue) {
+		doStatement(line);
+	}
+}
 	
 	
 int doStatement(char *line) {
@@ -273,16 +324,16 @@ int doStatement(char *line) {
 		case LET:
 			doLet(line);
 			break;
-
+		case IF:
+			doIfThen(line);
+			break;
 	}
 	return 0;
 }
 //in program space the contents will be
 // linenumber linknumber line
-
+// i'm not proud of the code here it feels clunky
 int insertline(short linenumber, char *line) {
-	unsigned short nextline = 0xffff;
-	unsigned short nextlink = 0xffff;
 	unsigned short currentline = 0xffff;
 	unsigned short currentlink = 0xffff;
 	unsigned short linestart = endprogramspace;

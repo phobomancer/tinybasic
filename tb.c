@@ -1,25 +1,31 @@
 #include<stdio.h>
+#include<stdint.h>
+
 #define programlen 40000
 #define linelength 256
+
+
 int KeywordCount = 11;
-enum KeywordValues{PRINT = '?', IF='!', THEN='=' ,GOTO='%', INPUT='&', LET='@', GOSUB='\\', RETURN='~', LIST='`', RUN='_', END='#'};
-int KeywordLookup[] = {PRINT, IF,THEN,GOTO,INPUT,LET,GOSUB,RETURN,LIST,RUN,END};
+enum KeywordValues{PRINT = 1, IF, THEN, GOTO, INPUT, LET, GOSUB, RETURN, LIST, RUN, END};
 char *Keywords[] = {"PRINT", "IF","THEN","GOTO","INPUT","LET","GOSUB","RETURN","LIST","RUN","END"};
 int KeywordLengths[] = {5,2,4,4,5,3,5,6,4,3,3};
-char programspace[programlen];
+
+char programSpace[programlen];
+
 int variables[26];
 
 #define gosubStackLen 32
-unsigned short gosubStack[gosubStackLen]; //32 seems like plently to me
+uint16_t gosubStack[gosubStackLen]; //32 seems like plently to me
+int gosubStackIndex = -1; // will be incremented to point to return line on stack
 
-int gosubStackIndex = -1;
-unsigned short programstart = 0xffff;
-unsigned short nextline= 0xffff;
-unsigned short programstartlinenum = 0xffff;
-int endprogramspace = 0; //first firee byte in programspace
-int error = 0;
+uint16_t programStart = 0xffff;
+uint16_t programStartLineNum = 0xffff;
+uint16_t nextLine = 0xffff;
+uint16_t currentLine = 0xffff;
+int endProgramSpace = 0; //first firee byte in programSpace
+int error = 0;   //the line number the error occured on or -1 if no current linenumber
 int lineIndex;
-unsigned short link;
+
 
 int doStatement(char *line); 
 int expression(char *line); 
@@ -36,37 +42,51 @@ int isKeyword(const char *a, int key) {
 
 // the resulting string can only be shorter or equal to 
 // the original string so we can do this inplace
+// remove all whitespace and tokenize keywords (except in strings)
 void TokenizeKeywords(char *string) {
 	int inString=0;
 	char newstr_index=0;
 	for(int i=0;i<linelength && string[i]!=0;i++) {
+		//check if a string is starting or ending, toggle the state
+		// there should probably be away to escape a double quote here...
 		if(string[i]=='"') {
 			inString = !inString;
 		}
+		// don't mess with characters surrounded by double quotes, just copy
+		// and move on
 		if(inString) {
 			string[newstr_index++] = string[i];
-			continue;
+			continue; //loop is short circuited here everything below this can 
+			          //only be run if the we're not in a string
 		}
+
+		// test for all keywords starting at this location in the string
+		// this is terribly brute force, but at least it's simple...i guesss
 		for(int key = 0; key<KeywordCount ; key++){
 			if(isKeyword(&string[i],key)){
-				string[newstr_index++]=KeywordLookup[key];
+				string[newstr_index++]=key+1; //key+1 is the keywords enum value
 				i+=(KeywordLengths[key]); //minus one because i will still be incremented
 				continue;
 			}
 		}
+		// don't copy whitespace (including newlines
 		if(string[i]!=' ' && string[i]!='\t' && string[i]!='\n'){
 			string[newstr_index++] = string[i];
 		}
 	}
-	string[newstr_index]=0;
+	if(inString) error=-1; // error must be nagative one because this function 
+	                       // runs  only only on program input not at run time
+	                       
+	string[newstr_index]=0; //terminate string
 }
+
 int variable(char *line) {
 	if(line[lineIndex] >= 'A' && line[lineIndex] <= 'Z') {
 		char var = line[lineIndex];
 		lineIndex++;
 		return variables[var - 'A'];
 	} else {
-		error = 1;
+		error = currentLine;
 		return 1;
 	}
 }
@@ -77,6 +97,10 @@ int number(char *line) {
 	for(;line[lineIndex]>='0' && line[lineIndex]<='9';lineIndex++) {
 		value*=10;
 		value+=(line[lineIndex]-'0');
+		if(line[lineIndex] != '0' && value == 0) {
+			error = currentLine;
+			return 0;
+		}
 	}
 	//printf("number %d\n",value);
 	return value;
@@ -88,6 +112,7 @@ int factor (char *line) {
 	int value = 0;
 	if(line[lineIndex]>='0' && line[lineIndex]<='9') {
 		value=number(line);
+		if(error) return 0;
 	} else if (line[lineIndex] == '(') {
 		lineIndex++;
 		value=expression(line);
@@ -99,9 +124,10 @@ int factor (char *line) {
 		}
 	} else if(line[lineIndex] >= 'A' && line[lineIndex] <= 'Z') {
 		value = variable(line);
+		if(error) return 0;
 	} else {
 		//printf("factor error\n");
-		error=-1;
+		error=currentLine;
 	}
 	//printf("factor char %c\n",line[lineIndex]);
 	//printf("factor %d\n",value);
@@ -121,7 +147,7 @@ int term (char *line) {
 		value=factor(line);
 		lineIndex--;
 		if(error) { 
-			return error ;
+			return 0 ;
 		}
 		
 		if(operator=='*'){
@@ -151,7 +177,7 @@ int expression(char *line) {
 		tmp = term(line);
 		//printf("expression char: %c\n",line[lineIndex]);
 		if(error) {
-			return error;
+			return 0;
 		}
 		
 		if(currentOp == '-') {
@@ -172,11 +198,17 @@ int expression(char *line) {
 
 int doPrint(char *line) {
 	do {
+		// this is mostly a check for characters separting the expression list
+		// other than the print token or a comma
+		if(line[lineIndex] != PRINT && line[lineIndex] != ',') {
+			error=currentLine;
+			return 0;
+		}
 		lineIndex++;
 		if(line[lineIndex]=='"') {
 			for(lineIndex++;line[lineIndex]!='"';lineIndex++) {
 				if(line[lineIndex]==0) {
-					error = -1;
+					error = currentLine;
 					return -1;
 				}
 				putchar(line[lineIndex]);
@@ -184,7 +216,7 @@ int doPrint(char *line) {
 			lineIndex++; // point after 2nd double quote
 		} else {
 			int value = expression(line);
-			if (error) {return -1;}
+			if (error) {return 0;}
 			printf("%d",value);
 		}
 	} while(line[lineIndex]==',');
@@ -193,92 +225,110 @@ int doPrint(char *line) {
 }
 		
 void doList() {
-	//printf("in list\n");
-	for(int i = 0; i < 30; i++) {
-		//printf("%2.2hhx ", programspace[i]);
-	}
-
-	for(unsigned short i=programstart; i != 0xffff; i = *(unsigned short *)(&programspace[i+2])) {
-		printf("%hu %s\n",*(unsigned short*)&programspace[i], &programspace[i+4]);
+	for(uint16_t i=programStart; i != 0xffff; i = *(uint16_t *)(&programSpace[i+2])) {
+		printf("%hu ",*(uint16_t*)&programSpace[i]); 
+		for(char *c = &programSpace[i+4]; *c != 0; c++) {
+			if(*c <= KeywordCount) { // *c <= keywordcount must be a token
+				printf("%s ",Keywords[(*c)-1]); // in that case detokenize
+			} else {
+				putchar(*c);
+			}
+		}
 	}
 }
 
-char *GetLine(unsigned short x) {
-	for(unsigned short i=programstart; i != 0xffff; i = *(unsigned short *)(&programspace[i+2])) {
-		if(x == *(unsigned short*)&programspace[i]) {
-			return &programspace[i];
+// this is kind of gross in that we start looking for the line 
+// at the top of the program every time even though most of the 
+// time the next line will be the next one in the list
+// but GOTO, GOSUB, and RETURN make that not always the case
+char *GetLine(uint16_t x) {
+	for(uint16_t i=programStart; i != 0xffff; i = *(uint16_t *)(&programSpace[i+2])) {
+		if(x == *(uint16_t*)&programSpace[i]) {
+			return &programSpace[i];
 		}
 	}
 	return NULL;
 }
 
 void doRun() {
-	nextline = *(unsigned short*)&programspace[programstart];
-	//printf("nextline %hu\n",nextline);
+	nextLine = *(uint16_t*)&programSpace[programStart];
 	char *line;
-	while(nextline != 0xffff) {
+	while(nextLine != 0xffff) {
 		if(error) { return; }
-		line = GetLine(nextline);
+		
+		line = GetLine(nextLine);
 		if(line == NULL) return;
-		//printf("getting nextlink\n");
-		unsigned short nextlink = *(unsigned short*)&line[2];
-		//printf("next link %hu\n",nextlink);
+		
+		uint16_t nextlink = *(uint16_t*)&line[2];
+		currentLine = *(uint16_t*)line; //set currentLine so we can report errors if any
+
+		// if nextlink == 0xffff there is no next line in the program
+		// so set next line to 0xffff to end the program (this could still be
+		// modified by GOTO, GOSUB, or RETURN
 		if(nextlink == 0xffff) {
-			nextline = 0xffff;
+			nextLine = 0xffff;
 		} else {
-			nextline = *(unsigned short*)&programspace[nextlink];
+			// if nextlink actually points somewhere use it to guess the next
+			// line to be executed...again this might be modified but the 
+			// statements listed above
+			nextLine = *(uint16_t*)&programSpace[nextlink];
 		}
-		//printf("next line %hu\n",nextline);
-		lineIndex=0;
-		//printf("running doStatement\n");
-		doStatement(&line[4]);
+		lineIndex=0; // start processing this line at the begining
+		doStatement(&line[4]); // &line[4] is the start of the text of the line
+		                       // (after linenum and nextlink values)
+		if(error) return;
 	}
 		
 }
 
 void doGoto(char *line) {
 	int linenum = expression(line+1);
-	nextline =(unsigned short)linenum;
+	if(error) return;
+	// being a GOTO statement...set the next line to be executed
+	nextLine =(uint16_t)linenum; 
 }
 
 void doGosub(char *line) {
 	gosubStackIndex++;
 	if( gosubStackIndex >= gosubStackLen ){
-		error = 1;
+		error = currentLine;
 		return;
 	}
-	gosubStack[gosubStackIndex] = nextline;
+	gosubStack[gosubStackIndex] = nextLine;
 	int linenum = expression(line+1);
-	nextline =(unsigned short)linenum;
+	nextLine =(uint16_t)linenum;
 }
 
 void doReturn() {
 	if(gosubStackIndex < 0){
-		error = 1;
+		error = currentLine;
 		return;
 	}
-	nextline = gosubStack[gosubStackIndex];
+	nextLine = gosubStack[gosubStackIndex];
 	gosubStackIndex--;
 }
 
 void doLet(char *line) {
 	lineIndex++;
 	if(line[lineIndex] < 'A' || line[lineIndex] > 'Z') {
-		error = 1;
+		error = currentLine;
 		return;
 	}
 	char var = line[lineIndex];
 	lineIndex++;
 	if(line[lineIndex] != '=') {
-		error = 1;
+		error = currentLine;
 		return;
 	}
 	lineIndex++;
 	int value = expression(line);
+	if(error) return;
 	variables[var - 'A'] = value;
 }
 
 
+// treat =,<,> as flags, this function will be called twice and bitwise OR'd
+// so at most 2 flags can be active at once
 int getRelOp(char *line) {
 	int op = 0;
 
@@ -289,28 +339,35 @@ int getRelOp(char *line) {
 		op = 2;
 	} else if ( partial == '=') {
 		op = 1;
+	} else {
+		error = currentLine;
 	}
 	return op;
 }
+
 void doIfThen(char *line) {
 	lineIndex++;
 	int value1, value2, op, tmp, istrue = 0;
 	value1 = expression(line);
+	if(error) return;
+
 	op = getRelOp(line);
-	if(op == 0) {
-		error = 1;
-		return;
-	}
+	if(error) return;
+
 	lineIndex++;
-	tmp = getRelOp(line);
+
+	tmp = getRelOp(line); // test if there is a second character to relative operation
 	if(tmp) {
 		lineIndex++;
+	} else {
+		error = 0; // if no second character not actually an error
 	}
 	op|=tmp;
 	value2 = expression(line);
-
+	if(error) return;
+	
 	if(line[lineIndex] != THEN) {
-		error = 1;
+		error = currentLine;
 		return;
 	} else {
 		lineIndex++;
@@ -329,12 +386,10 @@ void doIfThen(char *line) {
 	}
 }
 	
-	
-//int KeywordLookup[] = {PRINT, IF,THEN,GOTO,INPUT,LET,GOSUB,RETURN,LIST,RUN,END};
 int doStatement(char *line) {
 	switch(line[lineIndex]) {
 		case 0:
-			error = -1;
+			error = currentLine;
 			return -1;
 		case PRINT:
 			doPrint(line);
@@ -355,7 +410,7 @@ int doStatement(char *line) {
 			doIfThen(line);
 			break;
 		case END:
-			nextline = 0xffff;
+			nextLine = 0xffff;
 			break;
 		case GOSUB:
 			doGosub(line);
@@ -366,59 +421,53 @@ int doStatement(char *line) {
 	}
 	return 0;
 }
+
 //in program space the contents will be
 // linenumber linknumber line
-// i'm not proud of the code here it feels clunky
 int insertline(short linenumber, char *line) {
-	unsigned short currentline = 0xffff;
-	unsigned short currentlink = 0xffff;
-	unsigned short linestart = endprogramspace;
-	
-	*(unsigned short *)(programspace + endprogramspace)=linenumber;
-	*(unsigned short *)(programspace + endprogramspace + 2)=0xffff;
-	for(unsigned short i = 0;;i++) {
-		//printf("es: %hu i: %hu",endprogramspace, i);
-		programspace[endprogramspace+4+i]=line[i];
+	uint16_t currentline = 0xffff;
+	uint16_t currentlink = 0xffff;
+	uint16_t linestart = endProgramSpace;
+
+	// write new line and the end of programSpace	
+	*(uint16_t *)(programSpace + endProgramSpace)=linenumber;
+	*(uint16_t *)(programSpace + endProgramSpace + 2)=0xffff;
+	for(uint16_t i = 0;;i++) {
+		programSpace[endProgramSpace+4+i]=line[i];
 		if(line[i] == 0){
-			endprogramspace+=i+5;
+			endProgramSpace+=i+5;
 			break;
 		}
 	}
-	//printf("linenumber %hu\n", linenumber);
-	if(linenumber <= programstartlinenum){
-			//printf("first line\n");
-		if(linenumber == programstartlinenum) {	
-			*(unsigned short *)(&programspace[linestart+2]) = *(unsigned short*)&programspace[programstart+2];
+
+
+	// i'm not proud of the code here it feels clunky
+	if(linenumber <= programStartLineNum){
+		//printf("first line\n");
+		if(linenumber == programStartLineNum) {	
+			*(uint16_t *)(&programSpace[linestart+2]) = *(uint16_t*)&programSpace[programStart+2];
 		} else {
-			*(unsigned short *)(&programspace[linestart+2]) = programstart;
+			*(uint16_t *)(&programSpace[linestart+2]) = programStart;
 		}
-		programstart=linestart;
-		programstartlinenum = linenumber;	
+		programStart=linestart;
+		programStartLineNum = linenumber;	
 	} else {
-		for(unsigned short i=programstart; i != 0xffff; i = *(unsigned short *)(&programspace[i+2])) {
-			//printf("iteration\n");
-			currentline = *(unsigned short *)(&programspace[i]);
-			currentlink = *(unsigned short *)(&programspace[i+2]);	
-			//printf("current done %hu \n", currentlink);
-			//printf("next done\n");
-			if(currentlink!=0xffff && linenumber == *(unsigned short *)&programspace[currentlink]) {
-				//printf("same line num\n");
-				unsigned short nextline = *(unsigned short *)(&programspace[currentlink]);
-				unsigned short nextlink = *(unsigned short *)(&programspace[currentlink+2]);
-				*(unsigned short *)(&programspace[i+2])=linestart;
-				*(unsigned short *)(&programspace[linestart+2])=nextlink;
-				//printf("start %hu, link %hu\n",linestart,nextlink);
+		for(uint16_t i=programStart; i != 0xffff; i = *(uint16_t *)(&programSpace[i+2])) {
+			currentline = *(uint16_t *)(&programSpace[i]);
+			currentlink = *(uint16_t *)(&programSpace[i+2]);	
+			if(currentlink!=0xffff && linenumber == *(uint16_t *)&programSpace[currentlink]) {
+				uint16_t nextLine = *(uint16_t *)(&programSpace[currentlink]);
+				uint16_t nextlink = *(uint16_t *)(&programSpace[currentlink+2]);
+				*(uint16_t *)(&programSpace[i+2])=linestart;
+				*(uint16_t *)(&programSpace[linestart+2])=nextlink;
 				break;
 			}
-			if(currentline < linenumber && (currentlink==0xffff || linenumber < *(unsigned short *)&programspace[currentlink])) {
-				//printf("inserting\n");
-				*(unsigned short *)(&programspace[i+2])=linestart;
-				*(unsigned short *)(&programspace[linestart+2])=currentlink;
+			if(currentline < linenumber && (currentlink==0xffff || linenumber < *(uint16_t *)&programSpace[currentlink])) {
+				*(uint16_t *)(&programSpace[i+2])=linestart;
+				*(uint16_t *)(&programSpace[linestart+2])=currentlink;
 				
-				//printf("start %hu, link %hu\n",linestart,nextlink);
 				break;
 			}
-			//printf("end of loop\n");
 		}
 	}
 }
@@ -429,17 +478,17 @@ int main(void) {
 	while( fgets(buffer, linelength, stdin) ) {
 		int strpos = 0;
 		error = 0;
-		lineIndex=0;
+		lineIndex = 0;
+		currentLine = 0xffff;
 		TokenizeKeywords(buffer);
 		if( buffer[0] >= '0' && buffer[0]<='9'){
-			//printf("inserting line\n");
 			int linenumber = number(buffer);
 			insertline(linenumber,&buffer[lineIndex]);
 		} else {
-			//printf("%s\n",buffer);
-			//printf("%s\n",buffer);
 			int value = doStatement(buffer);
-			if(error) {printf("error\n");}
+			if(error) {
+				printf("ERROR ON LINE %d\n",error);
+			}
 			printf("\nOK\n");
 		}		
 	}

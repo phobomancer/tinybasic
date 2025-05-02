@@ -27,8 +27,8 @@ int error = 0;   //the line number the error occured on or -1 if no current line
 int lineIndex;
 
 
-int doStatement(char *line); 
-int expression(char *line); 
+int doStatement(char *line);
+int expression(char *line);
 
 int isKeyword(const char *a, int key) {
 //	printf("testing %s\n",Keywords[key]);
@@ -40,7 +40,7 @@ int isKeyword(const char *a, int key) {
 	return 1;
 }
 
-// the resulting string can only be shorter or equal to 
+// the resulting string can only be shorter or equal to
 // the original string so we can do this inplace
 // remove all whitespace and tokenize keywords (except in strings)
 void TokenizeKeywords(char *string) {
@@ -56,7 +56,7 @@ void TokenizeKeywords(char *string) {
 		// and move on
 		if(inString) {
 			string[newstr_index++] = string[i];
-			continue; //loop is short circuited here everything below this can 
+			continue; //loop is short circuited here everything below this can
 			          //only be run if the we're not in a string
 		}
 
@@ -74,9 +74,9 @@ void TokenizeKeywords(char *string) {
 			string[newstr_index++] = string[i];
 		}
 	}
-	if(inString) error=-1; // error must be nagative one because this function 
+	if(inString) error=-1; // error must be nagative one because this function
 	                       // runs  only only on program input not at run time
-	                       
+
 	string[newstr_index]=0; //terminate string
 }
 
@@ -92,7 +92,6 @@ int variable(char *line) {
 }
 
 int number(char *line) {
-	//printf("in number\n");
 	int value=0;
 	for(;line[lineIndex]>='0' && line[lineIndex]<='9';lineIndex++) {
 		value*=10;
@@ -102,13 +101,11 @@ int number(char *line) {
 			return 0;
 		}
 	}
-	//printf("number %d\n",value);
 	return value;
 }
 
 
 int factor (char *line) {
-	//printf("in factor\n");
 	int value = 0;
 	if(line[lineIndex]>='0' && line[lineIndex]<='9') {
 		value=number(line);
@@ -126,38 +123,32 @@ int factor (char *line) {
 		value = variable(line);
 		if(error) return 0;
 	} else {
-		//printf("factor error\n");
 		error=currentLine;
 	}
-	//printf("factor char %c\n",line[lineIndex]);
-	//printf("factor %d\n",value);
 	return value;
-	
+
 }
 
 
 int term (char *line) {
-	//printf("in term\n");
 	int total = factor(line);
 	int value;
-	
+
 	int operator;
 	for(;line[lineIndex]=='*' || line[lineIndex]=='/';lineIndex++) {
 		operator=line[lineIndex++];
 		value=factor(line);
 		lineIndex--;
-		if(error) { 
+		if(error) {
 			return 0 ;
 		}
-		
+
 		if(operator=='*'){
 			total*=value;
 		} else {
 			total/=value;
 		}
 	}
-	//printf("term char %c\n",line[lineIndex]);
-	//printf("term %d\n",total);
 	return total;
 }
 
@@ -166,7 +157,6 @@ int expression(char *line) {
 	int value = 0;
 	int tmp;
 	int currentOp = '+';
-	//printf("in expression\n");
 	if(line[lineIndex] == '-'){
 		currentOp='-';
 		lineIndex++;
@@ -175,11 +165,10 @@ int expression(char *line) {
 	}
 	for(;line[lineIndex] != 0; lineIndex++) {
 		tmp = term(line);
-		//printf("expression char: %c\n",line[lineIndex]);
 		if(error) {
 			return 0;
 		}
-		
+
 		if(currentOp == '-') {
 			tmp = 0-tmp;
 		}
@@ -192,7 +181,6 @@ int expression(char *line) {
 			break;
 		}
 	}
-	//printf("expression %d\n",value);
 	return value;
 }
 
@@ -223,10 +211,10 @@ int doPrint(char *line) {
 	putchar('\n');
 	return 0;
 }
-		
+
 void doList() {
 	for(uint16_t i=programStart; i != 0xffff; i = *(uint16_t *)(&programSpace[i+2])) {
-		printf("%hu ",*(uint16_t*)&programSpace[i]); 
+		printf("%hu ",*(uint16_t*)&programSpace[i]);
 		for(char *c = &programSpace[i+4]; *c != 0; c++) {
 			if(*c <= KeywordCount) { // *c <= keywordcount must be a token
 				printf("%s ",Keywords[(*c)-1]); // in that case detokenize
@@ -234,11 +222,12 @@ void doList() {
 				putchar(*c);
 			}
 		}
+		putchar('\n');
 	}
 }
 
-// this is kind of gross in that we start looking for the line 
-// at the top of the program every time even though most of the 
+// this is kind of gross in that we start looking for the line
+// at the top of the program every time even though most of the
 // time the next line will be the next one in the list
 // but GOTO, GOSUB, and RETURN make that not always the case
 char *GetLine(uint16_t x) {
@@ -255,10 +244,10 @@ void doRun() {
 	char *line;
 	while(nextLine != 0xffff) {
 		if(error) { return; }
-		
+
 		line = GetLine(nextLine);
 		if(line == NULL) return;
-		
+
 		uint16_t nextlink = *(uint16_t*)&line[2];
 		currentLine = *(uint16_t*)line; //set currentLine so we can report errors if any
 
@@ -269,7 +258,7 @@ void doRun() {
 			nextLine = 0xffff;
 		} else {
 			// if nextlink actually points somewhere use it to guess the next
-			// line to be executed...again this might be modified but the 
+			// line to be executed...again this might be modified but the
 			// statements listed above
 			nextLine = *(uint16_t*)&programSpace[nextlink];
 		}
@@ -278,14 +267,14 @@ void doRun() {
 		                       // (after linenum and nextlink values)
 		if(error) return;
 	}
-		
+
 }
 
 void doGoto(char *line) {
 	int linenum = expression(line+1);
 	if(error) return;
 	// being a GOTO statement...set the next line to be executed
-	nextLine =(uint16_t)linenum; 
+	nextLine =(uint16_t)linenum;
 }
 
 void doGosub(char *line) {
@@ -365,7 +354,7 @@ void doIfThen(char *line) {
 	op|=tmp;
 	value2 = expression(line);
 	if(error) return;
-	
+
 	if(line[lineIndex] != THEN) {
 		error = currentLine;
 		return;
@@ -380,12 +369,12 @@ void doIfThen(char *line) {
 	} else if (value1 < value2 && (op&4)){
 		istrue=1;
 	}
-	
+
 	if(istrue) {
 		doStatement(line);
 	}
 }
-	
+
 int doStatement(char *line) {
 	switch(line[lineIndex]) {
 		case 0:
@@ -429,43 +418,50 @@ int insertline(short linenumber, char *line) {
 	uint16_t currentlink = 0xffff;
 	uint16_t linestart = endProgramSpace;
 
-	// write new line and the end of programSpace	
-	*(uint16_t *)(programSpace + endProgramSpace)=linenumber;
-	*(uint16_t *)(programSpace + endProgramSpace + 2)=0xffff;
-	for(uint16_t i = 0;;i++) {
-		programSpace[endProgramSpace+4+i]=line[i];
-		if(line[i] == 0){
-			endProgramSpace+=i+5;
-			break;
+	// write new line and the end of programSpace
+	int isempty = (!*line);
+	if(!isempty) {
+		*(uint16_t *)(programSpace + endProgramSpace)=linenumber;
+		*(uint16_t *)(programSpace + endProgramSpace + 2)=0xffff;
+		for(uint16_t i = 0;;i++) {
+			programSpace[endProgramSpace+4+i]=line[i];
+			if(line[i] == 0){
+				endProgramSpace+=i+5;
+				break;
+			}
 		}
 	}
-
 
 	// i'm not proud of the code here it feels clunky
 	if(linenumber <= programStartLineNum){
 		//printf("first line\n");
-		if(linenumber == programStartLineNum) {	
+		if(linenumber == programStartLineNum) {
 			*(uint16_t *)(&programSpace[linestart+2]) = *(uint16_t*)&programSpace[programStart+2];
 		} else {
 			*(uint16_t *)(&programSpace[linestart+2]) = programStart;
 		}
 		programStart=linestart;
-		programStartLineNum = linenumber;	
+		programStartLineNum = linenumber;
 	} else {
 		for(uint16_t i=programStart; i != 0xffff; i = *(uint16_t *)(&programSpace[i+2])) {
 			currentline = *(uint16_t *)(&programSpace[i]);
-			currentlink = *(uint16_t *)(&programSpace[i+2]);	
+			currentlink = *(uint16_t *)(&programSpace[i+2]);
 			if(currentlink!=0xffff && linenumber == *(uint16_t *)&programSpace[currentlink]) {
+
 				uint16_t nextLine = *(uint16_t *)(&programSpace[currentlink]);
 				uint16_t nextlink = *(uint16_t *)(&programSpace[currentlink+2]);
-				*(uint16_t *)(&programSpace[i+2])=linestart;
-				*(uint16_t *)(&programSpace[linestart+2])=nextlink;
+				if(isempty) {
+					*(uint16_t *)(&programSpace[i+2])=nextlink;
+				} else {
+					*(uint16_t *)(&programSpace[i+2])=linestart;
+					*(uint16_t *)(&programSpace[linestart+2])=nextlink;
+				}
 				break;
 			}
-			if(currentline < linenumber && (currentlink==0xffff || linenumber < *(uint16_t *)&programSpace[currentlink])) {
+			if(currentlink==0xffff || linenumber < *(uint16_t *)&programSpace[currentlink]) {
 				*(uint16_t *)(&programSpace[i+2])=linestart;
 				*(uint16_t *)(&programSpace[linestart+2])=currentlink;
-				
+
 				break;
 			}
 		}
@@ -490,7 +486,7 @@ int main(void) {
 				printf("ERROR ON LINE %d\n",error);
 			}
 			printf("\nOK\n");
-		}		
+		}
 	}
 	return 0;
 }

@@ -19,10 +19,9 @@ uint16_t gosubStack[gosubStackLen]; //32 seems like plently to me
 int gosubStackIndex = -1; // will be incremented to point to return line on stack
 
 uint16_t programStart = 0xffff;
-uint16_t programStartLineNum = 0xffff;
 uint16_t nextLine = 0xffff;
 uint16_t currentLine = 0xffff;
-int endProgramSpace = 0; //first firee byte in programSpace
+int endProgramSpace = 0; //first free byte in programSpace
 int error = 0;   //the line number the error occured on or -1 if no current linenumber
 int lineIndex;
 
@@ -413,6 +412,11 @@ int doStatement(char *line) {
 
 //in program space the contents will be
 // linenumber linknumber line
+// a newly inserted line is appended to program space
+// then the links are maninpulated to insert the new line in the correct
+// order.
+// if a line is replaced no attempt is made to reclaim its used memory
+// as such many line replacements means much fragmentation
 int insertline(short linenumber, char *line) {
 	uint16_t linestart = endProgramSpace;
 
@@ -433,6 +437,8 @@ int insertline(short linenumber, char *line) {
 	uint16_t currentLine, nextLine;
 	uint16_t *currentNextLink, *nextNextLink;
 
+	// loop through the linked list until we find the position
+	// where the new line should go based on its linenumber
 	for(currentLine = 0, currentNextLink=&programStart;
 	*currentNextLink != 0xffff;
 	currentNextLink = nextNextLink, currentLine = nextLine) {

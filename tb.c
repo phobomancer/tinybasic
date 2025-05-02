@@ -414,8 +414,6 @@ int doStatement(char *line) {
 //in program space the contents will be
 // linenumber linknumber line
 int insertline(short linenumber, char *line) {
-	uint16_t currentline = 0xffff;
-	uint16_t currentlink = 0xffff;
 	uint16_t linestart = endProgramSpace;
 
 	// write new line and the end of programSpace
@@ -432,40 +430,28 @@ int insertline(short linenumber, char *line) {
 		}
 	}
 
-	// i'm not proud of the code here it feels clunky
-	if(linenumber <= programStartLineNum){
-		//printf("first line\n");
-		if(linenumber == programStartLineNum) {
-			*(uint16_t *)(&programSpace[linestart+2]) = *(uint16_t*)&programSpace[programStart+2];
-		} else {
-			*(uint16_t *)(&programSpace[linestart+2]) = programStart;
-		}
-		programStart=linestart;
-		programStartLineNum = linenumber;
-	} else {
-		for(uint16_t i=programStart; i != 0xffff; i = *(uint16_t *)(&programSpace[i+2])) {
-			currentline = *(uint16_t *)(&programSpace[i]);
-			currentlink = *(uint16_t *)(&programSpace[i+2]);
-			if(currentlink!=0xffff && linenumber == *(uint16_t *)&programSpace[currentlink]) {
+	uint16_t currentLine, nextLine;
+	uint16_t *currentNextLink, *nextNextLink;
 
-				uint16_t nextLine = *(uint16_t *)(&programSpace[currentlink]);
-				uint16_t nextlink = *(uint16_t *)(&programSpace[currentlink+2]);
-				if(isempty) {
-					*(uint16_t *)(&programSpace[i+2])=nextlink;
-				} else {
-					*(uint16_t *)(&programSpace[i+2])=linestart;
-					*(uint16_t *)(&programSpace[linestart+2])=nextlink;
-				}
-				break;
-			}
-			if(currentlink==0xffff || linenumber < *(uint16_t *)&programSpace[currentlink]) {
-				*(uint16_t *)(&programSpace[i+2])=linestart;
-				*(uint16_t *)(&programSpace[linestart+2])=currentlink;
-
-				break;
-			}
-		}
+	for(currentLine = 0, currentNextLink=&programStart;
+	*currentNextLink != 0xffff;
+	currentNextLink = nextNextLink, currentLine = nextLine) {
+		// grab nextLine and nextNextLink to look ahead
+		nextLine = *(uint16_t *) &programSpace[*currentNextLink];
+		nextNextLink = (uint16_t *) &programSpace[*currentNextLink+2];
+		if(linenumber <= nextLine ) break;
 	}
+
+	if(*currentNextLink == 0xffff) {  // append line
+		*currentNextLink = linestart;
+	} else if (linenumber < nextLine) { // insert line
+		*(uint16_t *)(&programSpace[linestart+2])=*currentNextLink;
+		*currentNextLink = linestart;
+	} else if (linenumber == nextLine) { //replace line
+		*(uint16_t *)(&programSpace[linestart+2])= *nextNextLink;
+		*currentNextLink = linestart;
+	}
+
 }
 
 int main(void) {

@@ -92,6 +92,7 @@ int variable(char *line) {
 
 int number(char *line) {
 	int value=0;
+	int iter = lineIndex;
 	for(;line[lineIndex]>='0' && line[lineIndex]<='9';lineIndex++) {
 		value*=10;
 		value+=(line[lineIndex]-'0');
@@ -100,94 +101,120 @@ int number(char *line) {
 			return 0;
 		}
 	}
+	if(iter - lineIndex==0) {
+		error = currentLine;
+		return 0;
+	}
+	//lineIndex--;
 	return value;
 }
 
+enum {add,subtract,multiply,divide};
 
-int factor (char *line) {
-	int value = 0;
-	if(line[lineIndex]>='0' && line[lineIndex]<='9') {
-		value=number(line);
-		if(error) return 0;
-	} else if (line[lineIndex] == '(') {
-		lineIndex++;
-		value=expression(line);
-		if (line[lineIndex] == ')') {
-			lineIndex++;
-		} else {
-			error=-1;
-			return error;
-		}
-	} else if(line[lineIndex] >= 'A' && line[lineIndex] <= 'Z') {
-		value = variable(line);
-		if(error) return 0;
-	} else {
-		error=currentLine;
-	}
-	return value;
-
-}
-
-
-int term (char *line) {
-	int total = factor(line);
-	int value;
-
-	int operator;
-	for(;line[lineIndex]=='*' || line[lineIndex]=='/';lineIndex++) {
-		operator=line[lineIndex++];
-		value=factor(line);
-		lineIndex--;
-		if(error) {
-			return 0 ;
-		}
-
-		if(operator=='*'){
-			total*=value;
-		} else {
-			total/=value;
-		}
-	}
-	return total;
-}
-
-
-int expression(char *line) {
-	int value = 0;
-	int tmp;
-	int currentOp = '+';
-	if(line[lineIndex] == '-'){
-		currentOp='-';
-		lineIndex++;
-	} else if (line[lineIndex] == '+' ) {
-		lineIndex++;
-	}
-	for(;line[lineIndex] != 0; lineIndex++) {
-		tmp = term(line);
-		if(error) {
-			return 0;
-		}
-
-		if(currentOp == '-') {
-			tmp = 0-tmp;
-		}
-		value += tmp;
-		if(line[lineIndex] == '-') {
-			currentOp = '-';
-		} else if(line[lineIndex] == '+') {
-			currentOp = '+';
-		} else {
+int operator(char *line) {
+	int op;
+	switch(line[lineIndex]) {
+		case '+':
+			op=add;
 			break;
+		case '-':
+			op=subtract;
+			break;
+		case '*':
+			op=multiply;
+			break;
+		case '/':
+			op=divide;
+			break;
+		default:
+			error = currentLine;
+			op=-1;
+	}
+	if(op!=-1) {
+		lineIndex++;
+	}
+	return op;
+}
+
+#define STACKSIZE 100
+int stackPush(int *stack, int *stackIndex, int value) {
+	if(*stackIndex > STACKSIZE -2) return -1;
+	//printf("pushing %d\n",value);
+	stack[++(*stackIndex)] = value;
+	return 0;
+}
+
+int stackPop(int *stack, int *stackIndex) {
+	if(stackIndex < 0) return 0; //not ideal
+	//printf("popping %d\n", stack[*stackIndex]);
+	return stack[(*stackIndex)--];
+}
+
+int expression(char *str){
+	int result;
+	int stack[STACKSIZE];
+	int stackIndex=-1;
+
+	for(; str[lineIndex] != 0;) {
+		result = number(str);
+		if(!error) {
+			stackPush(stack, &stackIndex, result);
+			goto endloop;
+		}
+		error=0;
+		result = variable(str);
+		if(!error) {
+			stackPush(stack, &stackIndex, result);
+			goto endloop;
+		}
+		error=0;
+		result = operator(str);
+		int val1, val2;
+		if(!error) {
+			val2 = stackPop(stack, &stackIndex);
+			val1 = stackPop(stack, &stackIndex);
+			switch(result) {
+				case add:
+					stackPush(stack, &stackIndex, val1+val2);
+					break;
+				case subtract:
+					stackPush(stack, &stackIndex, val1-val2);
+					break;
+				case multiply:
+					stackPush(stack, &stackIndex, val1*val2);
+					break;
+				case divide:
+					stackPush(stack, &stackIndex, val1/val2);
+					break;
+			}
+			goto endloop;
+		}
+		//if we've gotten this far str[lineIndex] must be ',' or syntax error
+
+endloop:
+		//lineIndex++;
+		//printf("should be comma : %c\n",str[lineIndex]);
+		if(str[lineIndex]!=',') {
+			error = 0;
+			break;
+		} else {
+			error = 0;
+			lineIndex++;
 		}
 	}
-	return value;
+	if(stackIndex != 0) {
+		error = currentLine;
+		return 0;
+	} else {
+		return stackPop(stack, &stackIndex);
+	}
 }
 
 int doPrint(char *line) {
 	do {
 		// this is mostly a check for characters separting the expression list
 		// other than the print token or a comma
-		if(line[lineIndex] != PRINT && line[lineIndex] != ',') {
+		if(line[lineIndex] != PRINT && line[lineIndex] != ';') {
 			error=currentLine;
 			return 0;
 		}
@@ -202,11 +229,12 @@ int doPrint(char *line) {
 			}
 			lineIndex++; // point after 2nd double quote
 		} else {
+
 			int value = expression(line);
 			if (error) {return 0;}
 			printf("%d",value);
 		}
-	} while(line[lineIndex]==',');
+	} while(line[lineIndex]==';');
 	putchar('\n');
 	return 0;
 }
